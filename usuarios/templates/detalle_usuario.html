@@ -1,0 +1,12 @@
+{% extends 'usuarios/templates/base.html' %}
+
+{% block content %}
+    <h1 class="mb-4">Detalles del Usuario</h1>
+    <div class="card" style="width: 18rem;">
+        <img src="{{ object.foto.url }}" class="card-img-top" alt="{{ object.nombre_completo }}">
+        <div class="card-body">
+            <h5 class="card-title">{{ object.nombre_completo }}</h5>
+            <a href="{% url 'lista_usuarios' %}" class="btn btn-primary">Volver</a>
+        </div>
+    </div>
+{% endblock %}

@@ -1,0 +1,587 @@
+/* Variables CSS para colores */
+:root {
+    --dark-blue: #0a192f; /* Fondo principal oscuro */
+    --navy-blue: #172a45; /* Fondo secundario, navbar, cards */
+    --teal-accent: #64ffda; /* Acentos, texto importante, bordes */
+    --light-slate: #a8b9cc; /* Texto general */
+    --lightest-slate: #ccd6f6; /* Títulos, texto más claro */
+    --blue-gradient-start: #00c6ff; /* Gradiente para elementos activos */
+    --blue-gradient-end: #0072ff;
+    --progress-green: #28a745; /* Verde para la barra de progreso circular */
+    --ring-thickness: 10px; /* Grosor del anillo de progreso */
+    
+    /* Variables responsivas para diferentes tamaños de pantalla */
+    --camera-size: min(400px, 100vw - 30px); /* Tamaño dinámico para la cámara */
+    --camera-area-size: calc(var(--camera-size) + (var(--ring-thickness) * 2));
+  }
+  
+  /* Estilos Generales */
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--dark-blue);
+    color: var(--light-slate);
+    margin: 0;
+    padding-top: 56px; /* Espacio para la navbar fixed-top */
+    overflow-x: hidden; /* Prevenir scroll horizontal */
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--lightest-slate);
+    margin-bottom: 1rem;
+  }
+  
+  a {
+    color: var(--teal-accent);
+    text-decoration: none;
+    transition: color 0.3s ease;
+  }
+  
+  a:hover {
+    color: #35f7c3; /* Un verde más brillante al pasar el mouse */
+    text-decoration: underline;
+  }
+  
+  /* Bootstrap Overrides & Custom Styles */
+  
+  /* Navbar */
+  .navbar {
+    background-color: var(--navy-blue) !important;
+    border-bottom: 1px solid rgba(100, 255, 218, 0.2);
+  }
+  
+  .navbar-brand {
+    color: var(--teal-accent) !important;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+  
+  .navbar-toggler {
+    border-color: rgba(100, 255, 218, 0.5);
+  }
+  
+  .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='30' height='30' viewBox='0 0 30 30'%3e%3cpath stroke='rgba(100, 255, 218, 0.8)' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e");
+  }
+  
+  .navbar-nav .nav-link {
+    color: var(--light-slate) !important;
+    margin-left: 15px;
+    transition: color 0.3s ease, transform 0.2s ease;
+  }
+  
+  .navbar-nav .nav-link:hover {
+    color: var(--teal-accent) !important;
+    transform: translateY(-2px);
+  }
+  
+  /* Contenedor principal */
+  .container.mt-4, .container-fluid {
+    background-color: var(--navy-blue);
+    padding: 20px 15px;
+    border-radius: 8px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+    margin-top: 20px !important;
+    margin-bottom: 20px;
+  }
+  
+  @media (max-width: 768px) {
+    .container.mt-4, .container-fluid {
+      padding: 15px 10px;
+      border-radius: 6px;
+    }
+    
+    h1 {
+      font-size: 1.8rem;
+    }
+  }
+  
+  /* Tablas */
+  .table {
+    color: var(--light-slate);
+    background-color: var(--navy-blue);
+  }
+  
+  .table-responsive {
+    border-radius: 6px;
+    overflow: hidden; /* Mantener bordes redondeados */
+  }
+  
+  .table thead th {
+    background-color: #223a5a;
+    color: var(--lightest-slate);
+    border-color: rgba(100, 255, 218, 0.2);
+    white-space: nowrap;
+  }
+  
+  .table tbody tr {
+    transition: background-color 0.2s ease;
+  }
+  
+  .table tbody tr:hover {
+    background-color: rgba(100, 255, 218, 0.05);
+  }
+  
+  .table td, .table th {
+    border-color: rgba(100, 255, 218, 0.1);
+    padding: 0.75rem;
+    vertical-align: middle;
+  }
+  
+  @media (max-width: 992px) {
+    .table td, .table th {
+      padding: 0.5rem;
+    }
+  }
+  
+  /* Cards para móviles (reemplazo de tablas) */
+  .card {
+    background-color: var(--navy-blue);
+    border: 1px solid rgba(100, 255, 218, 0.2);
+    border-radius: 8px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  
+  .card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+  }
+  
+  .card-header {
+    background-color: rgba(34, 58, 90, 0.7);
+    border-bottom: 1px solid rgba(100, 255, 218, 0.2);
+    padding: 0.75rem 1rem;
+  }
+  
+  .card-body {
+    padding: 1rem;
+  }
+  
+  /* Botones */
+  .btn {
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  
+  @media (max-width: 576px) {
+    .btn {
+      /* Botones más grandes para móviles (mejor para tocar) */
+      padding: 10px 16px;
+      margin-bottom: 5px;
+    }
+    
+    /* Permitir que los botones ocupen todo el ancho en móviles si están solos */
+    .d-flex.justify-content-center .btn {
+      flex-grow: 1;
+    }
+  }
+  
+  .btn-sm {
+    padding: 4px 8px;
+    font-size: 0.875rem;
+  }
+  
+  .btn-primary {
+    background: linear-gradient(45deg, var(--blue-gradient-start), var(--blue-gradient-end));
+    color: white;
+    box-shadow: 0 2px 5px rgba(0, 100, 255, 0.3);
+  }
+  
+  .btn-primary:hover {
+    background: linear-gradient(45deg, #0072ff, #00c6ff);
+    box-shadow: 0 4px 10px rgba(0, 100, 255, 0.5);
+    transform: translateY(-2px);
+  }
+  
+  .btn-info {
+    background-color: #17a2b8;
+    color: white;
+  }
+  
+  .btn-info:hover {
+    background-color: #138496;
+  }
+  
+  .btn-warning {
+    background-color: #ffc107;
+    color: #212529;
+  }
+  
+  .btn-warning:hover {
+    background-color: #e0a800;
+  }
+  
+  .btn-danger {
+    background-color: #dc3545;
+    color: white;
+  }
+  
+  .btn-danger:hover {
+    background-color: #c82333;
+  }
+  
+  /* ============================================= */
+  /* Estilos Específicos: Reconocimiento Facial    */
+  /* ============================================= */
+  
+  /* Centrar el contenido del formulario */
+  #reconocimiento_form {
+    text-align: center;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+  
+  /* Estilo para el form-group del nombre */
+  #reconocimiento_form .form-group {
+    text-align: left;
+    width: 100%;
+    max-width: 400px;
+    margin-left: auto;
+    margin-right: auto;
+    margin-bottom: 20px;
+  }
+  
+  /* Contenedor principal para el área de la cámara y progreso - Responsivo */
+  #cameraArea {
+    position: relative;
+    width: var(--camera-area-size);
+    height: var(--camera-area-size);
+    margin: 30px auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+  }
+  
+  /* Wrapper para el video/canvas/placeholder */
+  #videoWrapper {
+    position: absolute;
+    top: var(--ring-thickness);
+    left: var(--ring-thickness);
+    right: var(--ring-thickness);
+    bottom: var(--ring-thickness);
+    width: var(--camera-size);
+    height: var(--camera-size);
+    border-radius: 50%;
+    overflow: hidden;
+    z-index: 2;
+    box-shadow: 0 0 15px rgba(100, 255, 218, 0.2);
+  }
+  
+  /* Video, Canvas y Placeholder dentro del wrapper */
+  #videoWrapper video,
+  #videoWrapper canvas,
+  #videoWrapper img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  
+  /* ============================================= */
+  /* Estilos Específicos: Detección Tiempo Real    */
+  /* ============================================= */
+  
+  #deteccion_en_tiempo_real_container {
+    position: relative;
+    width: 100%;
+    max-width: 640px;
+    height: 0;
+    padding-bottom: 75%; /* Proporción 4:3 (75% del ancho) */
+    margin: 20px auto;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: #0c1524; /* Más oscuro que el fondo para el área de video */
+  }
+  
+  @media (min-width: 768px) {
+    #deteccion_en_tiempo_real_container {
+      padding-bottom: 56.25%; /* Proporción 16:9 para tablets/desktop */
+    }
+  }
+  
+  #deteccion_en_tiempo_real_container video,
+  #deteccion_en_tiempo_real_container canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  
+  #loadingMessage {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 1.1em;
+    color: var(--lightest-slate);
+  }
+  
+  /* Toast Notifications */
+  #toastContainer {
+    position: fixed;
+    top: 70px; /* Debajo del navbar */
+    right: 10px;
+    z-index: 1050;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    max-width: 90%;
+  }
+  
+  @media (max-width: 576px) {
+    #toastContainer {
+      left: 10px;
+      right: 10px;
+      align-items: stretch;
+    }
+  }
+  
+  .app-toast {
+    background-color: var(--navy-blue);
+    color: var(--lightest-slate);
+    padding: 12px 15px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+    width: 100%;
+    max-width: 350px;
+    border: 1px solid rgba(100, 255, 218, 0.3);
+  }
+  
+  @media (max-width: 576px) {
+    .app-toast {
+      max-width: 100%;
+    }
+  }
+  
+  .app-toast.show {
+    opacity: 1;
+  }
+  
+  /* Utilidades responsivas adicionales */
+  .img-fluid-height {
+    max-height: 100%;
+    width: auto;
+  }
+  
+  /* Mejoras para imágenes en tablas responsivas */
+  .table img {
+    max-width: 100%;
+    height: auto;
+    max-height: 100px;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+  
+  @media (max-width: 576px) {
+    .table img {
+      max-height: 80px;
+    }
+  }
+
+  /* Estilos específicos para reconocimiento facial - 
+   Agrega estos estilos al archivo CSS principal */
+
+/* Ajuste para el formulario de reconocimiento */
+#reconocimiento_form {
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+/* Mejora el campo de texto para nombre */
+#id_nombre_completo {
+  background-color: #172a45;
+  color: var(--lightest-slate);
+  border: 1px solid rgba(100, 255, 218, 0.3);
+  border-radius: 4px;
+  padding: 8px 12px;
+  width: 100%;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+#id_nombre_completo:focus {
+  border-color: var(--teal-accent);
+  box-shadow: 0 0 0 0.2rem rgba(100, 255, 218, 0.25);
+  outline: none;
+}
+
+/* Estilos responsivos para el área de la cámara */
+#cameraArea {
+  position: relative;
+  width: calc(400px + 20px); /* Tamaño base + grosor del anillo (10px * 2) */
+  height: calc(400px + 20px);
+  margin: 30px auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 50%;
+}
+
+/* Ajuste responsivo para pantallas pequeñas */
+@media (max-width: 480px) {
+  #cameraArea {
+    width: calc(min(320px, 100vw - 40px) + 20px);
+    height: calc(min(320px, 100vw - 40px) + 20px);
+  }
+}
+
+/* Contenedor del video/imagen con borde circular 
+#videoWrapper {
+  position: absolute;
+  top: 10px; /* Grosor del anillo 
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  border-radius: 50%;
+  overflow: hidden;
+  z-index: 2;
+  box-shadow: 0 0 15px rgba(100, 255, 218, 0.2);
+  background-color: #0a1525; /* Color de fondo más oscuro para el área de la cámara 
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Estilos para la imagen placeholder y video 
+#placeholderImage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* Mantiene la proporción y cubre todo el espacio 
+  border-radius: 50%;
+}
+
+#video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}*/
+
+
+/* Contenedor del video/imagen con borde circular */
+#videoWrapper {
+  position: absolute;
+  top: 10px; /* Grosor del anillo */
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  border-radius: 50%;
+  overflow: hidden;
+  z-index: 2;
+  box-shadow: 0 0 15px rgba(100, 255, 218, 0.2);
+  background-color: #0a1525; /* Color de fondo más oscuro para el área de la cámara */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* Deteccion */
+#video {
+  display: none; /* Keep initial state */
+  position: absolute; /* Helps with positioning within wrapper */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* The magic property */
+}
+
+/* Reconocimiento */
+.video {
+  display: none; /* Keep initial state */
+  position: absolute; /* Helps with positioning within wrapper */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* The magic property */
+  transform: scaleX(-1); /* Efecto espejo para la cámara frontal */
+
+}
+
+#placeholderImage {
+    /* Make sure placeholder also covers nicely */
+    object-fit: cover;
+    width: 100%;
+    height: 100%;
+}
+
+/* Anillo de progreso base (círculo completo) */
+#progressRingBase {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 10px solid rgba(100, 255, 218, 0.1);
+  box-sizing: border-box;
+  z-index: 0;
+}
+
+/* Anillo de progreso que se llena */
+#progressRing {
+  --progress: 0; /* Variable CSS controlada por JS (0-100) */
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  z-index: 1;
+  background: conic-gradient(
+    var(--progress-green) calc(var(--progress) * 1%),
+    transparent calc(var(--progress) * 1%)
+  );
+  transform: rotate(-90deg);
+  transition: background 0.5s ease-out;
+  box-sizing: border-box;
+  box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
+}
+
+/* Mensaje debajo del área de la cámara */
+#mensaje {
+  color: var(--lightest-slate);
+  font-size: 1.1rem;
+  margin-top: 1rem;
+}
+
+/* Mejora para los botones en móviles */
+@media (max-width: 576px) {
+  .btn {
+    margin: 5px;
+    padding: 10px 16px;
+  }
+  
+  #mensaje {
+    font-size: 1rem;
+  }
+}
+
+/* Mejora para botones */
+.btn-primary, .btn-secondary {
+  min-width: 180px;
+}
+
+@media (max-width: 480px) {
+  .btn-primary, .btn-secondary {
+    min-width: 140px;
+  }
+}

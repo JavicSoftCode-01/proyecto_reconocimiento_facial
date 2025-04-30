@@ -1,0 +1,73 @@
+{% extends 'usuarios/templates/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-fluid px-3">
+  <h1 class="mb-4"><i class="fas fa-camera me-2"></i>  Detección Facial en Vivo</h1>
+
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-10 col-xl-8">
+      <!-- Contenedor responsive para el video y el canvas -->
+      <div id="deteccion_en_tiempo_real_container" class="position-relative mx-auto my-3 shadow">
+        <!-- El video y canvas se ajustarán a cualquier tamaño de pantalla -->
+        <video id="video" class="w-100 h-auto" autoplay muted playsinline></video>
+        <canvas id="canvas" class="position-absolute top-0 start-0 w-100 h-100"></canvas>
+      </div>
+
+      <div class="alert alert-info text-center " style="display: none;" >
+        <p id="loadingMessage" class="mb-0">
+          <i class="fas fa-spinner fa-spin me-2"></i>Cargando modelos y datos de usuarios...
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Librerías de TensorFlow.js y face-api.js -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.7.4/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="{% static 'js/deteccion.js' %}"></script>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const container = document.getElementById('deteccion_en_tiempo_real_container');
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    
+    // Función para ajustar el tamaño según la orientación y tamaño de pantalla
+    function adjustVideoSize() {
+      const containerWidth = container.clientWidth;
+      
+      // Proporción 16:9 para mejor visualización
+      const height = containerWidth * 0.75; // Proporción 4:3 más natural para webcam
+      
+      // Aplicar altura al contenedor con altura fija
+      container.style.height = `480px`;
+      
+      // Actualizar dimensiones del canvas para que coincida exactamente con el video
+      canvas.width = containerWidth;
+      canvas.height = height;
+      
+      // Configurar video para cubrir todo el espacio
+      video.style.width = '100%';
+      video.style.height = '100%';
+      video.style.objectFit = 'cover';
+    }
+    
+    // Ajustar al cargar y cuando cambie el tamaño de pantalla
+    window.addEventListener('resize', adjustVideoSize);
+    adjustVideoSize();
+    
+    // Asegurar que no haya bordes redondeados
+    container.style.borderRadius = '10px';
+    video.style.borderRadius = '10px';
+    canvas.style.borderRadius = '10px';
+    
+    // También ajustar cuando el video obtenga metadata
+    video.addEventListener('loadedmetadata', adjustVideoSize);
+  });
+
+</script>
+{% endblock %}

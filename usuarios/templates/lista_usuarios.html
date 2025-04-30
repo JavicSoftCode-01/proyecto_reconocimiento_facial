@@ -1,0 +1,72 @@
+{% extends 'usuarios/templates/base.html' %}
+
+{% block content %}
+<div class="container-fluid px-3">
+  <h1 class="mb-4">Lista de Usuarios</h1>
+  
+  <!-- Tabla responsiva para pantallas grandes -->
+  <div class="table-responsive d-none d-md-block">
+    <table class="table table-striped">
+      <thead class="thead-dark">
+        <tr>
+          <th><i class="fas fa-user me-2"></i>Nombre Completo</th>
+          <th><i class="fas fa-image me-2"></i>Foto</th>
+          <th><i class="fas fa-cogs me-2"></i>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for usuario in usuarios %}
+        <tr>
+          <td>{{ usuario.nombre_completo }}</td>
+          <td><img src="{{ usuario.foto.url }}" alt="{{ usuario.nombre_completo }}" class="img-thumbnail" style="max-width: 100px; height: auto;"></td>
+          <td class="d-flex flex-wrap gap-1">
+            <a href="{% url 'detalle_usuario' usuario.pk %}" class="btn btn-info btn-sm">
+              <i class="fas fa-eye"></i><span class="d-none d-sm-inline ms-1">Ver</span>
+            </a>
+            <a href="{% url 'editar_usuario' usuario.pk %}" class="btn btn-warning btn-sm">
+              <i class="fas fa-edit"></i><span class="d-none d-sm-inline ms-1">Editar</span>
+            </a>
+            <a href="{% url 'eliminar_usuario' usuario.pk %}" class="btn btn-danger btn-sm">
+              <i class="fas fa-trash-alt"></i><span class="d-none d-sm-inline ms-1">Eliminar</span>
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="3" class="text-center">No hay usuarios registrados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  
+  <!-- Tarjetas para pantallas pequeñas (móviles) -->
+  <div class="d-md-none">
+    {% for usuario in usuarios %}
+    <div class="card mb-3">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-user me-2"></i> {{ usuario.nombre_completo }}</h5>
+      </div>
+      <div class="card-body">
+        <div class="text-center mb-3">
+          <img src="{{ usuario.foto.url }}" alt="{{ usuario.nombre_completo }}" class="img-fluid rounded" style="max-height: 150px;">
+        </div>
+        <div class="d-flex justify-content-center gap-2">
+          <a href="{% url 'detalle_usuario' usuario.pk %}" class="btn btn-info">
+            <i class="fas fa-eye"></i><span class="ms-1"> Ver</span>
+          </a>
+          <a href="{% url 'editar_usuario' usuario.pk %}" class="btn btn-warning">
+            <i class="fas fa-edit"></i><span class="ms-1"> Editar</span>
+          </a>
+          <a href="{% url 'eliminar_usuario' usuario.pk %}" class="btn btn-danger">
+            <i class="fas fa-trash-alt"></i><span class="ms-1"> Eliminar</span>
+          </a>
+        </div>
+      </div>
+    </div>
+    {% empty %}
+    <div class="alert alert-info">
+      <i class="fas fa-info-circle me-2"></i>No hay usuarios registrados.
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

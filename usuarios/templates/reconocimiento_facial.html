@@ -1,0 +1,146 @@
+{# usuarios/templates/reconocimiento_facial.html #}
+{% extends 'usuarios/templates/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-fluid px-3">
+  <h1 class="mb-4"><i class="fas fa-user"></i> Registrar Rostro IA</h1>
+
+  {% if messages %}
+    <div class="messages">
+      {% for message in messages %}
+        {# Los mensajes ahora se manejan con toasts #}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-10 col-xl-8">
+      <form method="post" enctype="multipart/form-data" id="reconocimiento_form">
+        {% csrf_token %}
+        <div class="form-group mb-3">
+          <label for="id_nombre_completo" class="form-label">
+            <i class="fas fa-user me-2"></i> Nombre completo:
+          </label>
+          {{ form.nombre_completo }}
+          {% if form.nombre_completo.errors %}
+            <div class="text-danger">{{ form.nombre_completo.errors }}</div>
+          {% endif %}
+        </div>
+        
+        <!-- Campos ocultos -->
+        {{ form.foto }}
+        <input type="hidden" name="descriptors" id="descriptorsInput">
+        <input type="hidden" name="foto_data" id="fotoDataInput">
+        <input type="hidden" name="captured_photos_data" id="capturedPhotosDataInput">
+
+        <!-- Área de la cámara con diseño responsivo -->
+        <div id="videoContainer" class="my-4" style="margin-left:-11px">
+          <div id="cameraArea" class="mx-auto">
+            <!-- Base del anillo de progreso -->
+            <div id="progressRingBase"></div>
+            <!-- Anillo de progreso circular -->
+            <div id="progressRing"></div>
+            <!-- Wrapper para el video/canvas/placeholder con recorte circular -->
+            <div id="videoWrapper">
+              <!-- Placeholder de imagen (inicialmente visible) -->
+              <img id="placeholderImage" src="{% static 'img/camera_placeholder.jpg' %}" 
+                   alt="Camera Placeholder" class="img-fluid w-100 h-100 object-fit-cover">
+              <!-- Elemento de video (inicialmente oculto) -->
+              <video id="video" class="video" autoplay muted playsinline style="display: none;"></video>
+            </div>
+          </div>
+          <p id="mensaje" class="mt-3 text-center fw-bold">
+            <i class="fas fa-info-circle me-2"></i> Presione "Capturar Rostros" para iniciar...
+          </p>
+          <!-- Barra de progreso oculta -->
+          <div class="progress mt-2" style="display: none;">
+            <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                 role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%
+            </div>
+          </div>
+        </div>
+
+        <!-- Botones de acción -->
+        <div class="d-flex flex-wrap justify-content-center gap-3 mt-4">
+          <button type="button" id="reconocerBtn" class="btn btn-primary">
+            <i class="fas fa-camera me-2"></i> Capturar Rostros
+          </button>
+          <a href="{% url 'lista_usuarios' %}" class="btn btn-secondary">
+            <i class="fas fa-times me-2"></i> Cancelar
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <!-- Librerías necesarias -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.7.4/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+  
+  
+  <!-- Script principal -->
+  <script src="{% static 'js/reconocimiento.js' %}"></script>
+  
+  <!-- Script para ajustar el tamaño de elementos responsivamente -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const cameraArea = document.getElementById('cameraArea');
+      const videoWrapper = document.getElementById('videoWrapper');
+      const video = document.getElementById('video');
+      const placeholderImage = document.getElementById('placeholderImage');
+      
+      // Función para ajustar tamaños responsivamente
+  
+      
+     // Función para ajustar tamaños responsivamente
+     function adjustCameraSize() {
+      // Determinar el tamaño base según el ancho de la pantalla
+      // Keep this part: Sets the size of the main container area
+      const baseSize = Math.min(400, window.innerWidth - 40);
+      const ringThickness = 10; // Ensure this matches CSS
+
+      // Actualizar tamaños del contenedor principal
+      cameraArea.style.width = `${baseSize + (ringThickness * 2)}px`;
+      cameraArea.style.height = `${baseSize + (ringThickness * 2)}px`;
+
+      // --- REMOVE THIS PART ---
+      // Remove the logic that checks video.videoWidth and sets
+      // video.style.width/height based on videoAspect.
+      // The CSS 'object-fit: cover' handles the video scaling now.
+      /*
+      if (video.videoWidth > 0) {
+        const videoAspect = video.videoWidth / video.videoHeight;
+        if (videoAspect > 1) {
+          // Video más ancho que alto - ajustar a altura
+          video.style.width = 'auto';
+          video.style.height = '100%';
+        } else {
+          // Video más alto que ancho o cuadrado - ajustar a ancho
+          video.style.width = '100%';
+          video.style.height = 'auto';
+        }
+      }
+      */
+      // --- END OF REMOVAL ---
+
+      // Optional: Ensure the wrapper is sized if needed, but usually
+      // 100% width/height via CSS is sufficient if cameraArea is sized.
+      // videoWrapper.style.width = `${baseSize}px`; // Example if needed
+      // videoWrapper.style.height = `${baseSize}px`; // Example if needed
+    }
+
+    // Keep these listeners
+    window.addEventListener('resize', adjustCameraSize);
+    adjustCameraSize(); // Initial call
+
+    // No need to call adjustCameraSize on 'loadedmetadata' for video scaling anymore,
+    // but it doesn't hurt to leave it if other adjustments depend on it.
+    // If you remove it, ensure adjustCameraSize() is called appropriately elsewhere if needed.
+    video.addEventListener('loadedmetadata', adjustCameraSize);
+    });
+  </script>
+{% endblock %}
