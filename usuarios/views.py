@@ -3,7 +3,7 @@ import base64
 import json
 import os
 import uuid
-from django.views.decorators.csrf import csrf_exempt  # Necesario para la API
+
 from django.conf import settings
 from django.contrib import messages
 from django.core.files.base import ContentFile
@@ -15,55 +15,6 @@ from django.views.generic import ListView, DetailView, UpdateView, DeleteView, T
 from .forms import UsuarioForm
 from .models import Usuario
 
-
-
-
-# Cargar el modelo Keras al iniciar el servidor
-try:
-    skin_disease_model = load_model('/static/js/Modelo_IA_Entrenada.keras')
-    print("Modelo Keras cargado exitosamente al iniciar el servidor.")
-except Exception as e:
-    skin_disease_model = None
-    print(f"Error al cargar el modelo Keras: {e}")
-
-@csrf_exempt  # Permitir solicitudes POST desde JavaScript sin CSRF (ajusta en producción)
-def predict_skin_disease(request):
-    if request.method == 'POST':
-        if skin_disease_model is None:
-            return JsonResponse({'error': 'Modelo no cargado en el servidor'}, status=500)
-
-        try:
-            # Obtener la imagen en base64 desde el request
-            data = json.loads(request.body)
-            img_data = data['image'].split(',')[1]  # Eliminar prefijo 'data:image/jpeg;base64,'
-            img_bytes = base64.b64decode(img_data)
-            img = Image.open(BytesIO(img_bytes))
-            img = img.resize((224, 224))  # Ajustar al tamaño esperado por tu modelo
-            img_array = np.array(img) / 255.0  # Normalizar (ajústalo según tu modelo)
-            img_array = np.expand_dims(img_array, axis=0)  # Añadir dimensión de batch
-
-            # Realizar la predicción
-            prediction = skin_disease_model.predict(img_array)
-            class_index = np.argmax(prediction, axis=1)[0]
-            confidence = prediction[0][class_index]
-            classes = ['MEL', 'NV', 'BCC', 'AK', 'BKL', 'DF', 'VASC', 'SCC']  # Ajusta según tu modelo
-
-            # Umbral de confianza
-            if confidence > 0.7 and class_index < len(classes):
-                disease = classes[class_index]
-                return JsonResponse({
-                    'disease': disease,
-                    'confidence': float(confidence)
-                })
-            else:
-                return JsonResponse({
-                    'disease': None,
-                    'confidence': 0.0,
-                    'message': 'No se detectó enfermedad con suficiente confianza'
-                })
-        except Exception as e:
-            return JsonResponse({'error': f'Error al procesar la imagen: {str(e)}'}, status=400)
-    return JsonResponse({'error': 'Método no permitido'}, status=405)
 
 class ListaUsuariosView(ListView):
   model = Usuario

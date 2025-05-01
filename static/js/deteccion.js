@@ -1,12 +1,6 @@
 
-// static/js/deteccion.js
-// ========================================================================
-//          SCRIPT DE DETECCIÓN FACIAL v3.2
-//          (Mejoras en Mensajes, Caché No Registrados, Umbrales, Persistencia de Marco)
-// ========================================================================
-
 document.addEventListener('DOMContentLoaded', async function () {
-  console.log('DOM fully loaded and parsed. Starting v3.2 detection script.');
+  console.log('DOM fully loaded and parsed. Starting v3.3 detection script.');
 
   // --- Elementos del DOM ---
   const video = document.getElementById('video');
@@ -30,9 +24,19 @@ document.addEventListener('DOMContentLoaded', async function () {
   const REQUIRED_CONSECUTIVE_FRAMES_UNREGISTERED = 5; // Umbral para considerar un desconocido "estable" (ej: 5 frames = 250ms)
 
   const SMOOTHING_ALPHA = 0.25; // Ligeramente más suavizado (más cerca de 0)
-  const MAX_MATCH_DISTANCE = 80; // <<< AUMENTADO LIGERAMENTE: Distancia máxima para emparejar caras entre frames. Ayuda con movimientos rápidos.
-  const MAX_MISSING_FRAMES = 10; // <<< NUEVO: Número máximo de frames que una cara puede estar ausente antes de dejar de seguirla (ej: 10 frames = 500ms)
+  const MAX_MATCH_DISTANCE = 80; // Distancia máxima para emparejar caras entre frames. Ayuda con movimientos rápidos.
+  const MAX_MISSING_FRAMES = 10; // Número máximo de frames que una cara puede estar ausente antes de dejar de seguirla (ej: 10 frames = 500ms)
 
+  // --- Configuración para Detección de Manchas ---
+  const SKIN_TONE_THRESHOLD = 15; // Reducido para mayor sensibilidad
+  const REQUIRED_CONSECUTIVE_FRAMES_MANCHA = 5; // Umbral de frames consecutivos para confirmar una mancha (250ms)
+  const MANCHA_ANNOUNCE_COOLDOWN_MS = 10000; // Cooldown para evitar spam de mensajes de "mancha detectada"
+  const GRID_SIZE = 4; // Dividir la cara en una cuadrícula 4x4 para análisis localizado
+
+  // --- Estado para Detección de Manchas ---
+  let consecutiveFramesMancha = 0; // Contador de frames consecutivos con mancha detectada
+  let lastManchaAnnounceTime = 0; // Última vez que se anunció "mancha detectada"
+  let userReferenceImages = {}; // Caché de imágenes de referencia por usuario (id: [img1, img2, ...])
 
   // --- Estado de Detección, Suavizado y Lógica de Anuncios ---
   let consecutiveFramesState = {
@@ -67,7 +71,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     unregisteredAnnounce: 0, // Cooldown general para el anuncio
   };
 
-  // --- Cola Unificada de Mensajes y Web Speech API (sin cambios significativos) ---
+  // --- Cola Unificada de Mensajes y Web Speech API ---
   const messageQueue = [];
   let isProcessingMessage = false;
   let currentToastElement = null;
@@ -75,7 +79,205 @@ document.addEventListener('DOMContentLoaded', async function () {
   let spanishVoice = null;
   let voiceInitializationAttempted = false;
 
-  // ... (loadVoices, initializeVoice, processMessageQueue, enqueueMessage - sin cambios funcionales) ...
+  // --- Funciones para Detección de Manchas ---
+
+  // Convertir RGB a HSV
+  function rgbToHsv(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const delta = max - min;
+
+    let h, s, v;
+
+    // Calcular valor (V)
+    v = max;
+
+    // Calcular saturación (S)
+    s = max === 0 ? 0 : delta / max;
+
+    // Calcular tono (H)
+    if (delta === 0) {
+      h = 0;
+    } else if (max === r) {
+      h = ((g - b) / delta) % 6;
+    } else if (max === g) {
+      h = (b - r) / delta + 2;
+    } else {
+      h = (r - g) / delta + 4;
+    }
+    h = Math.round(h * 60);
+    if (h < 0) h += 360;
+
+    return {h, s, v};
+  }
+
+  // Normalizar Iluminación
+  function normalizeBrightness(imageData) {
+    const pixels = imageData.data;
+    let totalBrightness = 0;
+    let pixelCount = 0;
+
+    // Calcular brillo promedio
+    for (let i = 0; i < pixels.length; i += 4) {
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+      const brightness = (r + g + b) / 3;
+      totalBrightness += brightness;
+      pixelCount++;
+    }
+
+    const avgBrightness = totalBrightness / pixelCount;
+    const targetBrightness = 128; // Brillo objetivo (mitad del rango 0-255)
+
+    // Normalizar
+    for (let i = 0; i < pixels.length; i += 4) {
+      pixels[i] = Math.min(255, Math.max(0, pixels[i] * (targetBrightness / avgBrightness))); // R
+      pixels[i + 1] = Math.min(255, Math.max(0, pixels[i + 1] * (targetBrightness / avgBrightness))); // G
+      pixels[i + 2] = Math.min(255, Math.max(0, pixels[i + 2] * (targetBrightness / avgBrightness))); // B
+    }
+
+    return imageData;
+  }
+
+  // Detectar Diferencias de Tonalidad por Regiones
+  async function detectSkinToneDifference(video, detectionBox, referenceImages) {
+    if (!referenceImages || referenceImages.length === 0) return false;
+
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d');
+
+    // Ajustar el tamaño del canvas al área de la cara detectada
+    const {x, y, width, height} = detectionBox;
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+
+    // Extraer el área de la cara del video
+    tempCtx.drawImage(video, x, y, width, height, 0, 0, width, height);
+    let videoImageData = tempCtx.getImageData(0, 0, width, height);
+    videoImageData = normalizeBrightness(videoImageData); // Normalizar iluminación
+    const videoPixels = videoImageData.data;
+
+    // Calcular el promedio de tonalidad (V en HSV) por regiones en la imagen actual
+    const regionWidth = width / GRID_SIZE;
+    const regionHeight = height / GRID_SIZE;
+    let videoRegionsV = [];
+
+    for (let row = 0; row < GRID_SIZE; row++) {
+      for (let col = 0; col < GRID_SIZE; col++) {
+        let totalV = 0;
+        let pixelCount = 0;
+
+        // Analizar píxeles en la región actual
+        for (let i = Math.floor(row * regionHeight); i < (row + 1) * regionHeight; i++) {
+          for (let j = Math.floor(col * regionWidth); j < (col + 1) * regionWidth; j++) {
+            const pixelIndex = (i * width + j) * 4;
+            if (pixelIndex >= videoPixels.length) continue;
+
+            const r = videoPixels[pixelIndex];
+            const g = videoPixels[pixelIndex + 1];
+            const b = videoPixels[pixelIndex + 2];
+            const {v} = rgbToHsv(r, g, b);
+            totalV += v;
+            pixelCount++;
+          }
+        }
+
+        const avgV = pixelCount > 0 ? totalV / pixelCount : 0;
+        videoRegionsV.push(avgV);
+      }
+    }
+
+    // Calcular el promedio de tonalidad (V en HSV) por regiones en las imágenes de referencia
+    let referenceRegionsV = new Array(GRID_SIZE * GRID_SIZE).fill(0);
+    let totalReferenceImages = 0;
+
+    for (const refImage of referenceImages) {
+      tempCanvas.width = refImage.width;
+      tempCanvas.height = refImage.height;
+      tempCtx.drawImage(refImage, 0, 0);
+      let refImageData = tempCtx.getImageData(0, 0, refImage.width, refImage.height);
+      refImageData = normalizeBrightness(refImageData); // Normalizar iluminación
+      const refPixels = refImageData.data;
+
+      const refRegionWidth = refImage.width / GRID_SIZE;
+      const refRegionHeight = refImage.height / GRID_SIZE;
+
+      for (let row = 0; row < GRID_SIZE; row++) {
+        for (let col = 0; col < GRID_SIZE; col++) {
+          let totalV = 0;
+          let pixelCount = 0;
+
+          for (let i = Math.floor(row * refRegionHeight); i < (row + 1) * refRegionHeight; i++) {
+            for (let j = Math.floor(col * refRegionWidth); j < (col + 1) * refRegionWidth; j++) {
+              const pixelIndex = (i * refImage.width + j) * 4;
+              if (pixelIndex >= refPixels.length) continue;
+
+              const r = refPixels[pixelIndex];
+              const g = refPixels[pixelIndex + 1];
+              const b = refPixels[pixelIndex + 2];
+              const {v} = rgbToHsv(r, g, b);
+              totalV += v;
+              pixelCount++;
+            }
+          }
+
+          const avgV = pixelCount > 0 ? totalV / pixelCount : 0;
+          referenceRegionsV[row * GRID_SIZE + col] += avgV;
+        }
+      }
+      totalReferenceImages++;
+    }
+
+    // Promediar las regiones de las imágenes de referencia
+    referenceRegionsV = referenceRegionsV.map(v => v / totalReferenceImages);
+
+    // Comparar las tonalidades por región
+    let maxDifference = 0;
+    for (let i = 0; i < videoRegionsV.length; i++) {
+      const difference = Math.abs(videoRegionsV[i] - referenceRegionsV[i]) * 255; // Escalar a rango 0-255
+      maxDifference = Math.max(maxDifference, difference);
+    }
+
+    console.log(`Máxima diferencia de tonalidad por región: ${maxDifference.toFixed(2)} (umbral: ${SKIN_TONE_THRESHOLD})`);
+
+    return maxDifference > SKIN_TONE_THRESHOLD;
+  }
+
+  // Cargar Imágenes de Referencia del Usuario
+  async function loadUserReferenceImages(userId) {
+    if (userReferenceImages[userId]) return userReferenceImages[userId]; // Usar caché si ya están cargadas
+
+    const images = [];
+    const basePath = `/media/fotos_usuarios/user_${userId}/`;
+
+    // Intentar cargar las 10 imágenes (rostro_1.jpg a rostro_10.jpg)
+    for (let i = 1; i <= 10; i++) {
+      const imgPath = `${basePath}rostro_${i}.jpg`;
+      try {
+        const img = new Image();
+        img.crossOrigin = "Anonymous"; // Necesario si las imágenes están en un dominio diferente
+        await new Promise((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error(`No se pudo cargar la imagen ${imgPath}`));
+          img.src = imgPath;
+        });
+        images.push(img);
+      } catch (error) {
+        console.warn(`No se pudo cargar la imagen ${imgPath}: ${error.message}`);
+      }
+    }
+
+    userReferenceImages[userId] = images;
+    console.log(`Cargadas ${images.length} imágenes de referencia para el usuario ${userId}`);
+    return images;
+  }
+
+  // --- Funciones de Síntesis de Voz ---
   function loadVoices() {
     if (!synth) return;
     const voices = synth.getVoices();
@@ -186,7 +388,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     setTimeout(processMessageQueue, 200);
   }
 
-
   function enqueueMessage(text, type = 'info', duration = 4000, speak = true, important = false) {
     if (messageQueue.length > 0 && messageQueue[messageQueue.length - 1].text === text) return;
     if (currentToastElement && currentToastElement.textContent === text) return;
@@ -198,8 +399,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (!isProcessingMessage) setTimeout(processMessageQueue, 0);
   }
 
-
-  // --- Funciones de Control (MODIFICADO resetDetectionState) ---
+  // --- Funciones de Control ---
   function stopCamera() {
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
@@ -218,9 +418,14 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   function resetDetectionState() {
     consecutiveFramesState = {
-      noFace: 0, coveredFace: 0, unregisteredFace: 0,
-      closingWarningShown: false, recognizedFaces: {},
+      noFace: 0,
+      coveredFace: 0,
+      unregisteredFace: 0,
+      closingWarningShown: false,
+      recognizedFaces: {},
     };
+    consecutiveFramesMancha = 0; // Resetear contador de manchas
+    lastManchaAnnounceTime = 0; // Resetear cooldown de anuncios de manchas
     greetedUserIds.clear();
     announcedUnregisteredHashes.clear();
 
@@ -228,10 +433,9 @@ document.addEventListener('DOMContentLoaded', async function () {
       uncoverFace: 0,
       unregisteredAnnounce: 0,
     };
-    //previousSmoothedData = []; // <<< NO limpiar aquí para mantener seguimiento entre pausas cortas si es necesario
     currentFrame = 0;
-    nextFaceId = 0; // IDs de seguimiento se resetean por sesión
-    console.log("Estado de detección reseteado (saludos y anuncios de sesión reiniciados).");
+    nextFaceId = 0;
+    console.log("Estado de detección reseteado (saludos, anuncios y detección de manchas reiniciados).");
   }
 
   function closeDetection(reason = 'inactividad') {
@@ -247,8 +451,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       }
       currentToastElement = null;
     }
-    previousSmoothedData = []; // <<< Limpiar aquí al cerrar completamente
-    // greetedUserIds y announcedUnregisteredHashes se limpian en resetDetectionState
+    previousSmoothedData = []; // Limpiar al cerrar completamente
 
     loadingMessage.textContent = `Detección cerrada por ${reason}.`;
     loadingMessage.style.display = 'block';
@@ -256,7 +459,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     console.log(`Detección cerrada por ${reason}.`);
   }
 
-  // --- Carga de Modelos y Datos (sin cambios) ---
+  // --- Carga de Modelos y Datos ---
   async function loadModelsAndData() {
     enqueueMessage('Cargando modelos de IA...', 'info', 3000, false);
     loadingMessage.textContent = 'Cargando modelos...';
@@ -313,7 +516,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     return true;
   }
 
-  // --- Inicio de Video (sin cambios) ---
+  // --- Inicio de Video ---
   async function startVideo() {
     loadingMessage.textContent = 'Accediendo a la cámara...';
     enqueueMessage('Iniciando cámara...', 'info', 3000, false);
@@ -353,7 +556,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     return true;
   }
 
-  // --- Función isFaceCovered (sin cambios funcionales) ---
+  // --- Función isFaceCovered ---
   function isFaceCovered(detection, landmarks) {
     if (!detection || !landmarks) return true;
     if (detection.score < 0.7) return true; // Umbral de score
@@ -375,7 +578,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     return false;
   }
 
-  // --- Funciones Auxiliares Suavizado (sin cambios) ---
+  // --- Funciones Auxiliares Suavizado ---
   function getBoxCenter(box) {
     if (!box) return null;
     return {x: box.x + box.width / 2, y: box.y + box.height / 2};
@@ -387,17 +590,15 @@ document.addEventListener('DOMContentLoaded', async function () {
   }
 
   function smoothValue(current, previous, alpha) {
-     // Asegurarse de que previous sea un número válido antes de suavizar
-     if (typeof previous !== 'number' || isNaN(previous)) {
-         return current; // Si el valor anterior no es válido, usar el actual
-     }
+    if (typeof previous !== 'number' || isNaN(previous)) {
+      return current; // Si el valor anterior no es válido, usar el actual
+    }
     return alpha * current + (1 - alpha) * previous;
   }
 
   function smoothBox(currentBox, previousBox, alpha) {
-    // Asegurarse de que previousBox tenga valores numéricos válidos
     if (!previousBox || isNaN(previousBox.x) || isNaN(previousBox.y) || isNaN(previousBox.width) || isNaN(previousBox.height)) {
-        return {...currentBox}; // Si el anterior no es válido, usar el actual sin suavizar
+      return {...currentBox}; // Si el anterior no es válido, usar el actual sin suavizar
     }
     return {
       x: smoothValue(currentBox.x, previousBox.x, alpha),
@@ -407,8 +608,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     };
   }
 
-
-  // --- Funciones para Caché de No Registrados (sin cambios funcionales) ---
+  // --- Funciones para Caché de No Registrados ---
   function createDescriptorHash(descriptor) {
     if (!descriptor || descriptor.length !== 128) return null;
     let hashValue = 0;
@@ -431,17 +631,17 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (storedHashes) {
           const parsedHashes = JSON.parse(storedHashes);
           if (Array.isArray(parsedHashes)) {
-             unregisteredCache = new Set(parsedHashes);
-             console.log(`Caché de no registrados persistente cargada: ${unregisteredCache.size} entradas.`);
+            unregisteredCache = new Set(parsedHashes);
+            console.log(`Caché de no registrados persistente cargada: ${unregisteredCache.size} entradas.`);
           } else {
-             console.warn("Datos de caché de no registrados en localStorage no son un array. Reiniciando caché.");
-             unregisteredCache = new Set();
-             localStorage.removeItem(UNREGISTERED_STORAGE_KEY);
-             localStorage.removeItem(UNREGISTERED_EXPIRY_KEY);
+            console.warn("Datos de caché de no registrados en localStorage no son un array. Reiniciando caché.");
+            unregisteredCache = new Set();
+            localStorage.removeItem(UNREGISTERED_STORAGE_KEY);
+            localStorage.removeItem(UNREGISTERED_EXPIRY_KEY);
           }
         } else {
-           unregisteredCache = new Set();
-           console.log("No hay caché de no registrados persistente en localStorage.");
+          unregisteredCache = new Set();
+          console.log("No hay caché de no registrados persistente en localStorage.");
         }
       } else {
         localStorage.removeItem(UNREGISTERED_STORAGE_KEY);
@@ -453,9 +653,11 @@ document.addEventListener('DOMContentLoaded', async function () {
       console.error("Error cargando caché de no registrados:", e);
       unregisteredCache = new Set();
       try {
-         localStorage.removeItem(UNREGISTERED_STORAGE_KEY);
-         localStorage.removeItem(UNREGISTERED_EXPIRY_KEY);
-      } catch(e2) { console.error("Error adicional limpiando localStorage:", e2); }
+        localStorage.removeItem(UNREGISTERED_STORAGE_KEY);
+        localStorage.removeItem(UNREGISTERED_EXPIRY_KEY);
+      } catch (e2) {
+        console.error("Error adicional limpiando localStorage:", e2);
+      }
     }
     announcedUnregisteredHashes = new Set();
   }
@@ -473,7 +675,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
   }
 
-  // --- Bucle Principal de Detección (MODIFICADO para Persistencia) ---
+  // --- Bucle Principal de Detección ---
   function runDetection() {
     if (!faceMatcher) {
       console.warn("No faceMatcher! Detection cannot run.");
@@ -498,7 +700,6 @@ document.addEventListener('DOMContentLoaded', async function () {
 
       try {
         // --- Detección ---
-        // inputSize 416 es un buen compromiso entre velocidad y precisión vs 320
         const detectionOptions = new faceapi.TinyFaceDetectorOptions({inputSize: 416});
         const detections = await faceapi.detectAllFaces(video, detectionOptions).withFaceLandmarks().withFaceDescriptors();
         const resizedDetections = faceapi.resizeResults(detections, displaySize);
@@ -547,7 +748,7 @@ document.addEventListener('DOMContentLoaded', async function () {
               currentFrameState.hasUnregistered = true;
               faceHash = createDescriptorHash(detection.descriptor);
               if (faceHash) {
-                 currentFrameState.currentFrameUnknownHashes.add(faceHash);
+                currentFrameState.currentFrameUnknownHashes.add(faceHash);
               }
             } else {
               status = 'recognized';
@@ -556,19 +757,28 @@ document.addEventListener('DOMContentLoaded', async function () {
               currentFrameState.recognizedIds.add(userId);
             }
           }
-          currentRawData.push({rawBox: box, rawCenter: center, label, boxColor, status, userId, faceHash, index: i, descriptor: detection.descriptor}); // Incluir descriptor para posible uso futuro o depuración
+          currentRawData.push({
+            rawBox: box,
+            rawCenter: center,
+            label,
+            boxColor,
+            status,
+            userId,
+            faceHash,
+            index: i,
+            descriptor: detection.descriptor
+          });
         }
 
         // --- 2. Emparejamiento, Suavizado (EMA) y Persistencia ---
-        let nextSmoothedData = []; // La lista de caras suavizadas para el PRÓXIMO frame
-        let matchedPreviousIndices = new Set(); // Índices de previousSmoothedData que fueron emparejados
+        let nextSmoothedData = [];
+        let matchedPreviousIndices = new Set();
 
         // --- 2a. Procesar detecciones actuales: emparejar con previas o considerar nuevas ---
         for (const currentData of currentRawData) {
           let bestMatchIndex = -1;
           let minDistance = MAX_MATCH_DISTANCE;
 
-          // Buscar la cara suavizada anterior más cercana que aún no ha sido emparejada
           for (let i = 0; i < previousSmoothedData.length; i++) {
             if (matchedPreviousIndices.has(i)) continue;
             const prevData = previousSmoothedData[i];
@@ -582,14 +792,13 @@ document.addEventListener('DOMContentLoaded', async function () {
           }
 
           if (bestMatchIndex !== -1) {
-            // Emparejado con una cara anterior: aplicar suavizado, resetear missingFrames
             const prevData = previousSmoothedData[bestMatchIndex];
             matchedPreviousIndices.add(bestMatchIndex);
 
             const smoothed = smoothBox(currentData.rawBox, prevData.box, SMOOTHING_ALPHA);
 
             nextSmoothedData.push({
-              id: prevData.id, // Mantener el mismo ID de seguimiento
+              id: prevData.id,
               box: smoothed,
               label: currentData.label,
               color: currentData.boxColor,
@@ -597,12 +806,11 @@ document.addEventListener('DOMContentLoaded', async function () {
               userId: currentData.userId,
               faceHash: currentData.faceHash,
               lastUpdateFrame: currentFrame,
-              missingFrames: 0 // Resetear contador de frames perdidos
+              missingFrames: 0
             });
           } else {
-            // Nueva cara detectada (no se emparejó con ninguna anterior): usar datos crudos inicialmente, missingFrames = 0
             nextSmoothedData.push({
-              id: nextFaceId++, // Asignar un nuevo ID de seguimiento
+              id: nextFaceId++,
               box: currentData.rawBox,
               label: currentData.label,
               color: currentData.boxColor,
@@ -610,137 +818,112 @@ document.addEventListener('DOMContentLoaded', async function () {
               userId: currentData.userId,
               faceHash: currentData.faceHash,
               lastUpdateFrame: currentFrame,
-              missingFrames: 0 // Nueva cara, 0 frames perdidos
+              missingFrames: 0
             });
           }
         }
 
         // --- 2b. Procesar caras suavizadas previas que NO fueron emparejadas (Persistencia) ---
         for (let i = 0; i < previousSmoothedData.length; i++) {
-            if (!matchedPreviousIndices.has(i)) {
-                const prevData = previousSmoothedData[i];
-                const newMissingFrames = prevData.missingFrames + 1;
+          if (!matchedPreviousIndices.has(i)) {
+            const prevData = previousSmoothedData[i];
+            const newMissingFrames = prevData.missingFrames + 1;
 
-                // Si la cara no ha estado ausente por demasiados frames, mantenerla
-                if (newMissingFrames < MAX_MISSING_FRAMES) {
-                    // Mantener la última caja suavizada conocida y actualizar missingFrames
-                    nextSmoothedData.push({
-                        id: prevData.id,
-                        box: prevData.box, // Usar la caja suavizada del frame anterior
-                        label: prevData.label, // Mantener el último label conocido
-                        color: prevData.color, // Mantener el último color conocido
-                        status: prevData.status, // Mantener el último status conocido
-                        userId: prevData.userId,
-                        faceHash: prevData.faceHash,
-                        lastUpdateFrame: prevData.lastUpdateFrame, // No se actualizó en este frame
-                        missingFrames: newMissingFrames // Incrementar contador de frames perdidos
-                    });
-                } else {
-                    // La cara ha estado ausente por demasiados frames, dejar de seguirla
-                    // console.log(`Face ID ${prevData.id} dropped after ${newMissingFrames} missing frames.`);
-                }
+            if (newMissingFrames < MAX_MISSING_FRAMES) {
+              nextSmoothedData.push({
+                id: prevData.id,
+                box: prevData.box,
+                label: prevData.label,
+                color: prevData.color,
+                status: prevData.status,
+                userId: prevData.userId,
+                faceHash: prevData.faceHash,
+                lastUpdateFrame: prevData.lastUpdateFrame,
+                missingFrames: newMissingFrames
+              });
             }
+          }
         }
 
         // Actualizar previousSmoothedData para el siguiente frame
         previousSmoothedData = nextSmoothedData;
 
-
-        // --- 3. Lógica de Estados Consecutivos y Mensajes (Basada en currentFrameState) ---
+        // --- 3. Lógica de Estados Consecutivos y Mensajes ---
         const now = Date.now();
 
         // Resetear contadores si no hay caras detectadas en el frame actual
         if (!currentFrameState.hasFace) {
-            consecutiveFramesState.noFace++;
-            // Si no hay caras detectadas en absoluto, resetear otros contadores
-            consecutiveFramesState.coveredFace = 0;
-            consecutiveFramesState.unregisteredFace = 0;
-            consecutiveFramesState.recognizedFaces = {};
+          consecutiveFramesState.noFace++;
+          consecutiveFramesState.coveredFace = 0;
+          consecutiveFramesState.unregisteredFace = 0;
+          consecutiveFramesState.recognizedFaces = {};
         } else {
-            consecutiveFramesState.noFace = 0;
-            consecutiveFramesState.closingWarningShown = false;
+          consecutiveFramesState.noFace = 0;
+          consecutiveFramesState.closingWarningShown = false;
         }
 
-        // Contadores para estados específicos (solo si hay caras detectadas en el frame actual)
+        // Contadores para estados específicos
         if (currentFrameState.hasFace) {
-            if (currentFrameState.hasCovered) consecutiveFramesState.coveredFace++; else consecutiveFramesState.coveredFace = 0;
-            // Contar frames con *alguna* cara desconocida detectada
-            if (currentFrameState.hasUnregistered) consecutiveFramesState.unregisteredFace++; else consecutiveFramesState.unregisteredFace = 0;
+          if (currentFrameState.hasCovered) consecutiveFramesState.coveredFace++; else consecutiveFramesState.coveredFace = 0;
+          if (currentFrameState.hasUnregistered) consecutiveFramesState.unregisteredFace++; else consecutiveFramesState.unregisteredFace = 0;
 
-            // Contadores para usuarios reconocidos específicos (basado en detecciones actuales)
-            const currentRecognized = consecutiveFramesState.recognizedFaces;
-            consecutiveFramesState.recognizedFaces = {}; // Resetear y recontar solo los presentes en este frame
-            currentFrameState.recognizedIds.forEach(id => {
-              consecutiveFramesState.recognizedFaces[id] = (currentRecognized[id] || 0) + 1;
-            });
-            // Los contadores de reconocidos que ya no están presentes se limpian arriba.
+          const currentRecognized = consecutiveFramesState.recognizedFaces;
+          consecutiveFramesState.recognizedFaces = {};
+          currentFrameState.recognizedIds.forEach(id => {
+            consecutiveFramesState.recognizedFaces[id] = (currentRecognized[id] || 0) + 1;
+          });
         }
-
 
         // --- Disparar Acciones ---
 
         // Advertencia de inactividad / cierre
         if (consecutiveFramesState.noFace >= WARNING_NO_FACE_FRAMES && !consecutiveFramesState.closingWarningShown) {
-            enqueueMessage('No se detecta actividad facial. Cerrando pronto...', 'warning', 10000, true);
-            consecutiveFramesState.closingWarningShown = true;
+          enqueueMessage('No se detecta actividad facial. Cerrando pronto...', 'warning', 10000, true);
+          consecutiveFramesState.closingWarningShown = true;
         }
         if (consecutiveFramesState.noFace >= MAX_CONSECUTIVE_NO_FACE) {
-            closeDetection('inactividad');
-            return; // Salir del intervalo
+          closeDetection('inactividad');
+          return;
         }
 
         // "Descubrir Cara"
-        // Usar el umbral específico para cara cubierta, basado en consecutiveFramesState.coveredFace
         if (consecutiveFramesState.coveredFace >= REQUIRED_CONSECUTIVE_FRAMES_COVERED) {
           if (now - lastMessageTime.uncoverFace > UNCOVER_FACE_COOLDOWN_MS) {
             enqueueMessage('Por favor, descubra su rostro.', 'warning', 5000, true);
             lastMessageTime.uncoverFace = now;
-            // No resetear coveredFace aquí; se resetea cuando currentFrameState.hasCovered sea false.
           }
         }
 
-
         // "Persona No Registrada" con Caché y Anuncio Único por Sesión
-        // Disparar la lógica si hay suficientes frames consecutivos con *alguna* cara desconocida detectada
         if (consecutiveFramesState.unregisteredFace >= REQUIRED_CONSECUTIVE_FRAMES_UNREGISTERED) {
-            let shouldAnnounceUnregistered = false;
-            const currentUnknownHashes = currentFrameState.currentFrameUnknownHashes;
+          let shouldAnnounceUnregistered = false;
+          const currentUnknownHashes = currentFrameState.currentFrameUnknownHashes;
 
-            // Iterar sobre los hashes desconocidos detectados en ESTE frame
-            for (const hash of currentUnknownHashes) {
-                if (!hash) continue;
+          for (const hash of currentUnknownHashes) {
+            if (!hash) continue;
 
-                // Si el hash NO está en la caché persistente Y NO está en la caché de anuncios de sesión
-                if (!unregisteredCache.has(hash) && !announcedUnregisteredHashes.has(hash)) {
-                    unregisteredCache.add(hash);
-                    announcedUnregisteredHashes.add(hash);
-                    shouldAnnounceUnregistered = true;
-                    console.log(`New unregistered face detected and cached (Hash: ${hash.substring(0, 15)}...). Added to session announcements.`);
-                }
+            if (!unregisteredCache.has(hash) && !announcedUnregisteredHashes.has(hash)) {
+              unregisteredCache.add(hash);
+              announcedUnregisteredHashes.add(hash);
+              shouldAnnounceUnregistered = true;
+              console.log(`New unregistered face detected and cached (Hash: ${hash.substring(0, 15)}...). Added to session announcements.`);
             }
+          }
 
-            // Si se encontró al menos una cara desconocida NUEVA en este frame
-            if (shouldAnnounceUnregistered) {
-                if (now - lastMessageTime.unregisteredAnnounce > UNREGISTERED_GENERAL_COOLDOWN_MS) {
-                    enqueueMessage('Persona no registrada detectada.', 'warning', 5000, true);
-                    lastMessageTime.unregisteredAnnounce = now;
-                }
+          if (shouldAnnounceUnregistered) {
+            if (now - lastMessageTime.unregisteredAnnounce > UNREGISTERED_GENERAL_COOLDOWN_MS) {
+              enqueueMessage('Persona no registrada detectada.', 'warning', 5000, true);
+              lastMessageTime.unregisteredAnnounce = now;
             }
-
-            // Resetear el contador de frames desconocidos después de procesar
-            // consecutiveFramesState.unregisteredFace = 0; // Se resetea si currentFrameState.hasUnregistered es false
+          }
         }
 
-
-        // Saludos Únicos por Sesión para Usuarios Registrados
-        // Basado en consecutiveFramesState.recognizedFaces
+        // Saludos Únicos por Sesión y Detección de Manchas para Usuarios Reconocidos
         for (const userId in consecutiveFramesState.recognizedFaces) {
           if (consecutiveFramesState.recognizedFaces[userId] >= REQUIRED_CONSECUTIVE_FRAMES_GENERAL) {
-
-            // Chequear si YA ha sido saludado en esta sesión
+            // Saludo único
             if (!greetedUserIds.has(userId)) {
-              // Buscar la cara en los datos suavizados actuales para obtener el nombre
-              const faceData = previousSmoothedData.find(f => f.userId === userId); // Buscar en la lista final suavizada
+              const faceData = previousSmoothedData.find(f => f.userId === userId);
               if (faceData) {
                 const userName = faceData.label && faceData.label !== 'unknown' ? faceData.label : 'Usuario';
                 enqueueMessage(`Hola, ${userName}! Bienvenido.`, 'success', 4000, true);
@@ -748,12 +931,35 @@ document.addEventListener('DOMContentLoaded', async function () {
                 console.log(`User ${userId} (${userName}) greeted.`);
               }
             }
-            // Resetear contador de frames para este usuario específico
+
+            // Detección de Manchas
+            const referenceImages = await loadUserReferenceImages(userId);
+            const faceData = previousSmoothedData.find(f => f.userId === userId);
+
+            if (faceData && referenceImages.length > 0) {
+              const hasMancha = await detectSkinToneDifference(video, faceData.box, referenceImages);
+
+              if (hasMancha) {
+                consecutiveFramesMancha++;
+              } else {
+                consecutiveFramesMancha = 0;
+              }
+
+              if (consecutiveFramesMancha >= REQUIRED_CONSECUTIVE_FRAMES_MANCHA) {
+                if (now - lastManchaAnnounceTime > MANCHA_ANNOUNCE_COOLDOWN_MS) {
+                  enqueueMessage('Mancha detectada en la piel.', 'warning', 5000, true);
+                  lastManchaAnnounceTime = now;
+                }
+                consecutiveFramesMancha = 0;
+              }
+            }
+
+            // Resetear contador de frames para este usuario
             consecutiveFramesState.recognizedFaces[userId] = 0;
           }
         }
 
-        // --- 4. Dibujar Cuadros Suavizados (usando previousSmoothedData que ahora incluye persistencia) ---
+        // --- 4. Dibujar Cuadros Suavizados ---
         previousSmoothedData.forEach(data => {
           const drawBox = new faceapi.draw.DrawBox(data.box, {
             label: data.label,
@@ -767,7 +973,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       } catch (error) {
         console.error('ERR in detection loop:', error);
         if (messageQueue.filter(m => m.text === 'Error en ciclo de detección.').length === 0) {
-             enqueueMessage('Error en ciclo de detección.', 'error', 5000, false);
+          enqueueMessage('Error en ciclo de detección.', 'error', 5000, false);
         }
       }
     }, detectionIntervalMs);
@@ -782,11 +988,11 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (!videoStarted) return;
 
     if (faceMatcher && video.readyState >= 3 && stream && stream.active) {
-        runDetection();
+      runDetection();
     } else {
-        console.error("Failed to start detection: Matcher or video stream not ready.");
-        enqueueMessage('No se pudo iniciar la detección facial.', 'error', 8000, true, true);
-        closeDetection('inicio fallido');
+      console.error("Failed to start detection: Matcher or video stream not ready.");
+      enqueueMessage('No se pudo iniciar la detección facial.', 'error', 8000, true, true);
+      closeDetection('inicio fallido');
     }
   }
 
@@ -811,10 +1017,9 @@ document.addEventListener('DOMContentLoaded', async function () {
   } else {
     console.warn('Speech synthesis not supported in this browser.');
   }
-
 });
 
-// --- Función showToast (sin cambios funcionales) ---
+// --- Función showToast ---
 function showToast(message, type = 'info', duration = 4000) {
   let toastContainer = document.getElementById('toast-container');
   if (!toastContainer) {
@@ -873,7 +1078,9 @@ function showToast(message, type = 'info', duration = 4000) {
       setTimeout(() => {
         try {
           toastElement.remove();
-        } catch (e) { console.error("Error removing toast after fade:", e); }
+        } catch (e) {
+          console.error("Error removing toast after fade:", e);
+        }
       }, 400);
     }
   }, duration);
@@ -885,7 +1092,9 @@ function showToast(message, type = 'info', duration = 4000) {
       setTimeout(() => {
         try {
           toastElement.remove();
-        } catch (e) { console.error("Error removing toast after click:", e); }
+        } catch (e) {
+          console.error("Error removing toast after click:", e);
+        }
       }, 400);
     }
   }, {once: true});
